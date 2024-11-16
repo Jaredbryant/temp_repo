@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useGoogleLogin } from "@react-oauth/google";
 import axios from "axios";
 import ClassroomCalendar from "./ClassroomCalendar";
+import Gpt from "./Gpt";
 
 const App = () => {
   const [token, setToken] = useState(null); // OAuth token
@@ -211,9 +212,11 @@ const App = () => {
             ))}
           </ul>
           <ClassroomCalendar events={events} />
+          <Gpt/>
         </>
       )}
     </div>
+    
   );
 };
 
