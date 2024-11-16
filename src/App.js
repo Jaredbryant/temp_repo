@@ -4,9 +4,9 @@ import axios from "axios";
 import ClassroomCalendar from "./ClassroomCalendar";
 
 const App = () => {
-  const [token, setToken] = useState(null); // To store the OAuth token
+  const [token, setToken] = useState(null); // OAuth token
   const [events, setEvents] = useState([]);
-  const [grades, setGrades] = useState({}); // Store grades for courses
+  const [grades, setGrades] = useState({}); // Course grades
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -65,6 +65,7 @@ const App = () => {
 
             const submission = submissionResponse.data.studentSubmissions[0];
             const grade = submission?.assignedGrade || "Not Graded";
+            const isTurnedIn = submission?.state === "TURNED_IN";
 
             // Add assignment event with grade
             if (dueDate) {
@@ -76,11 +77,21 @@ const App = () => {
                 dueTime?.minutes || 59
               );
 
+              // Determine color
+              let color = "gray"; // Default: ungraded
+              if (dueDateTime < new Date() && !isTurnedIn) {
+                color = "red"; // Past due and not submitted
+              } else if (grade !== "Not Graded") {
+                color = "green"; // Graded
+              } else if (isTurnedIn) {
+                color = "blue"; // Submitted but not graded
+              }
+
               allEvents.push({
                 title: `${title} (Grade: ${grade})`,
                 start: dueDateTime,
                 end: dueDateTime,
-                color: grade === "Not Graded" ? "gray" : "green", // Graded assignments are green
+                color,
               });
             } else {
               allEvents.push({
