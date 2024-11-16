@@ -3,6 +3,7 @@ import { useGoogleLogin } from "@react-oauth/google";
 import axios from "axios";
 import ClassroomCalendar from "./ClassroomCalendar";
 import Gpt from "./Gpt";
+import StudyMaterial from "./StudyMaterial"
 
 const App = () => {
   const [token, setToken] = useState(null); // OAuth token
@@ -234,6 +235,7 @@ const App = () => {
           >
             {JSON.stringify(gradesArray, null, 2)}
           </pre>
+          <StudyMaterial/>
         </>
       )}
     </div>
