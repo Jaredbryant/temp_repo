@@ -7,7 +7,8 @@ import Gpt from "./Gpt";
 const App = () => {
   const [token, setToken] = useState(null); // OAuth token
   const [events, setEvents] = useState([]);
-  const [grades, setGrades] = useState({}); // Course grades
+  const [grades, setGrades] = useState({}); // Store grades for courses
+  const [gradesArray, setGradesArray] = useState([]); // 2D array of assignments and grades
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -35,12 +36,15 @@ const App = () => {
       if (courses.length === 0) {
         console.warn("No courses found for the logged-in account.");
         setEvents([]);
+        setGrades({});
+        setGradesArray([]);
         setIsLoading(false);
         return;
       }
 
       const allEvents = [];
       const gradesMap = {};
+      const tempGradesArray = []; // Temporary array for assignments and grades
 
       // Fetch coursework and grades
       for (const course of courses) {
@@ -64,11 +68,14 @@ const App = () => {
               }
             );
 
-            const submission = submissionResponse.data.studentSubmissions[0];
-            const grade = submission?.assignedGrade || "Not Graded";
-            const isTurnedIn = submission?.state === "TURNED_IN";
+            const submissions = submissionResponse.data.studentSubmissions || [];
+            submissions.forEach((submission) => {
+              const grade = submission?.assignedGrade || "Not Graded";
+              const studentId = submission?.userId || "Unknown Student";
+              tempGradesArray.push([title, studentId, grade]);
+            });
 
-            // Add assignment event with grade
+            // Add assignment event
             if (dueDate) {
               const dueDateTime = new Date(
                 dueDate.year,
@@ -80,23 +87,23 @@ const App = () => {
 
               // Determine color
               let color = "gray"; // Default: ungraded
-              if (dueDateTime < new Date() && !isTurnedIn) {
+              if (dueDateTime < new Date() && submissions.every(s => s.state !== "TURNED_IN")) {
                 color = "red"; // Past due and not submitted
-              } else if (grade !== "Not Graded") {
+              } else if (submissions.some(s => s.assignedGrade !== undefined)) {
                 color = "green"; // Graded
-              } else if (isTurnedIn) {
+              } else if (submissions.some(s => s.state === "TURNED_IN")) {
                 color = "blue"; // Submitted but not graded
               }
 
               allEvents.push({
-                title: `${title} (Grade: ${grade})`,
+                title: `${title}`,
                 start: dueDateTime,
                 end: dueDateTime,
                 color,
               });
             } else {
               allEvents.push({
-                title: `${title} (Grade: ${grade}, No Due Date)`,
+                title: `${title}`,
                 start: null,
                 end: null,
                 color: "gray",
@@ -117,8 +124,10 @@ const App = () => {
       // Update state with events and grades
       setEvents(allEvents);
       setGrades(gradesMap);
-      console.log("Final Events with Grades:", allEvents);
+      setGradesArray(tempGradesArray);
+      console.log("Final Events:", allEvents);
       console.log("Grades by Course:", gradesMap);
+      console.log("2D Grades Array:", tempGradesArray);
     } catch (error) {
       console.error("Error fetching classroom data:", error.response || error);
     } finally {
@@ -142,6 +151,7 @@ const App = () => {
     setToken(null);
     setEvents([]);
     setGrades({});
+    setGradesArray([]);
   };
 
   // Circle Progress Bar
@@ -213,6 +223,17 @@ const App = () => {
           </ul>
           <ClassroomCalendar events={events} />
           <Gpt/>
+          <h3>2D Array of Assignments and Grades</h3>
+          <pre
+            style={{
+              background: "#f4f4f4",
+              padding: "10px",
+              borderRadius: "5px",
+              overflowX: "auto",
+            }}
+          >
+            {JSON.stringify(gradesArray, null, 2)}
+          </pre>
         </>
       )}
     </div>
