@@ -1,15 +1,23 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useGoogleLogin } from "@react-oauth/google";
 import axios from "axios";
 import ClassroomCalendar from "./ClassroomCalendar";
 
 const App = () => {
+  const [token, setToken] = useState(null); // To store the OAuth token
   const [events, setEvents] = useState([]);
-  const [overdueCount, setOverdueCount] = useState(0); // Overdue assignments
-  const [completedCount, setCompletedCount] = useState(0); // Completed assignments
+  const [grades, setGrades] = useState({}); // Store grades for courses
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (token) {
+      fetchClassroomData(token);
+    }
+  }, [token]);
 
   // Fetch Classroom Data
   const fetchClassroomData = async (token) => {
+    setIsLoading(true);
     try {
       console.log("Fetching classroom data with token:", token);
 
@@ -26,16 +34,14 @@ const App = () => {
       if (courses.length === 0) {
         console.warn("No courses found for the logged-in account.");
         setEvents([]);
-        setOverdueCount(0);
-        setCompletedCount(0);
+        setIsLoading(false);
         return;
       }
 
-      // Fetch coursework for each course
       const allEvents = [];
-      let overdue = 0;
-      let completed = 0;
+      const gradesMap = {};
 
+      // Fetch coursework and grades
       for (const course of courses) {
         try {
           const courseworkResponse = await axios.get(
@@ -44,14 +50,23 @@ const App = () => {
               headers: { Authorization: `Bearer ${token}` },
             }
           );
-          console.log(`Assignments for Course ID: ${course.id}`, courseworkResponse.data);
 
           const coursework = courseworkResponse.data.courseWork || [];
-          coursework.forEach((assignment) => {
-            const now = new Date();
-            const { dueDate, dueTime } = assignment;
-            const title = assignment.title;
+          for (const assignment of coursework) {
+            const { dueDate, dueTime, title, id: assignmentId } = assignment;
 
+            // Fetch student submission for the assignment
+            const submissionResponse = await axios.get(
+              `https://classroom.googleapis.com/v1/courses/${course.id}/courseWork/${assignmentId}/studentSubmissions`,
+              {
+                headers: { Authorization: `Bearer ${token}` },
+              }
+            );
+
+            const submission = submissionResponse.data.studentSubmissions[0];
+            const grade = submission?.assignedGrade || "Not Graded";
+
+            // Add assignment event with grade
             if (dueDate) {
               const dueDateTime = new Date(
                 dueDate.year,
@@ -61,67 +76,63 @@ const App = () => {
                 dueTime?.minutes || 59
               );
 
-              // Check overdue or on-time
-              if (dueDateTime < now) {
-                overdue++;
-                allEvents.push({
-                  title: `Overdue: ${title}`,
-                  start: dueDateTime,
-                  end: dueDateTime,
-                  color: "red",
-                });
-              } else {
-                completed++;
-                allEvents.push({
-                  title,
-                  start: dueDateTime,
-                  end: dueDateTime,
-                  color: "blue",
-                });
-              }
+              allEvents.push({
+                title: `${title} (Grade: ${grade})`,
+                start: dueDateTime,
+                end: dueDateTime,
+                color: grade === "Not Graded" ? "gray" : "green", // Graded assignments are green
+              });
             } else {
               allEvents.push({
-                title: `${title} (No Due Date)`,
+                title: `${title} (Grade: ${grade}, No Due Date)`,
                 start: null,
                 end: null,
                 color: "gray",
               });
             }
-          });
+          }
+
+          // Store course-level grade information
+          gradesMap[course.id] = {
+            courseName: course.name,
+            grade: course.grade || "N/A", // Course grade if available
+          };
         } catch (error) {
           console.error(`Error fetching assignments for course ID: ${course.id}`, error);
         }
       }
 
-      // Update state with events and counts
+      // Update state with events and grades
       setEvents(allEvents);
-      setOverdueCount(overdue);
-      setCompletedCount(completed);
-      console.log("Final Events:", allEvents);
+      setGrades(gradesMap);
+      console.log("Final Events with Grades:", allEvents);
+      console.log("Grades by Course:", gradesMap);
     } catch (error) {
       console.error("Error fetching classroom data:", error.response || error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   // Google Login
   const login = useGoogleLogin({
-    onSuccess: async (tokenResponse) => {
-      console.log("Login Successful:", tokenResponse);
-      const token = tokenResponse.access_token;
-
-      fetchClassroomData(token);
+    onSuccess: (response) => {
+      console.log("Login Successful:", response);
+      setToken(response.access_token);
     },
     onError: (error) => console.error("Login failed:", error),
-    scope: "https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.coursework.me.readonly",
+    scope: "https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.coursework.me.readonly https://www.googleapis.com/auth/classroom.student-submissions.me.readonly",
   });
 
   // Logout
   const logout = () => {
     console.log("Logging out...");
-    window.location.reload();
+    setToken(null);
+    setEvents([]);
+    setGrades({});
   };
 
-  // Circle Progress Bar (inline for compactness)
+  // Circle Progress Bar
   const CircleProgressBar = ({ completedCount, overdueCount }) => {
     const total = completedCount + overdueCount;
     const completedPercentage = total ? (completedCount / total) * 100 : 0;
@@ -162,17 +173,32 @@ const App = () => {
   return (
     <div>
       <h1>Classroom Calendar</h1>
-      {!events.length ? (
+      {!token ? (
         <>
-          <button onClick={() => login()}>Login with Google</button>
-          <p>No events to display</p>
+          <button onClick={login}>Login with Google</button>
         </>
+      ) : isLoading ? (
+        <p>Loading data...</p>
       ) : (
         <>
           <button onClick={logout}>Logout</button>
           <h2>Your Assignments</h2>
-          <CircleProgressBar completedCount={completedCount} overdueCount={overdueCount} />
-          <h3>Overdue Assignments: {overdueCount}</h3>
+          <CircleProgressBar
+            completedCount={
+              events.filter((event) => event.color === "green").length
+            }
+            overdueCount={
+              events.filter((event) => event.color === "red").length
+            }
+          />
+          <h3>Grades Overview</h3>
+          <ul>
+            {Object.values(grades).map((grade, index) => (
+              <li key={index}>
+                <strong>{grade.courseName}</strong>: {grade.grade}
+              </li>
+            ))}
+          </ul>
           <ClassroomCalendar events={events} />
         </>
       )}
